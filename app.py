@@ -232,43 +232,74 @@ header[data-testid="stHeader"] {
 def ask_ollama(investigation_data):
 
     prompt = f"""
-You are a cybersecurity SOC analyst assistant.
+You are PhishLens AI, a SOC analyst assistant.
 
-Analyze the following phishing email investigation data.
+Your job is to explain the security investigation data supplied below.
 
-IMPORTANT:
-- Do not invent evidence.
-- Use only the supplied investigation data.
-- Do not create unsupported MITRE ATT&CK techniques.
-- Explain the evidence clearly.
-- Distinguish detected evidence from analyst interpretation.
-- Give practical SOC analyst actions.
-- This is an analyst-assistance report, not a confirmed verdict.
+STRICT RULES:
+1. Use ONLY the supplied investigation data.
+2. NEVER invent evidence.
+3. NEVER invent IP addresses, domains, URLs, authentication results,
+   findings, attack techniques, or attacker behavior.
+4. NEVER add MITRE ATT&CK technique IDs.
+5. For MITRE ATT&CK, copy ONLY the exact technique_id, technique,
+   tactic, and trigger already present in the supplied "mitre" section.
+6. If the "mitre" section is empty, say:
+   "No deterministic MITRE ATT&CK mapping was generated."
+7. Do not claim that malware was downloaded, executed, or delivered
+   unless the supplied evidence explicitly shows it.
+8. Do not claim that a user clicked a URL unless the supplied evidence
+   explicitly shows it.
+9. Do not invent grammar mistakes, spelling mistakes, personalization
+   problems, or other email characteristics unless they are present
+   in the supplied evidence.
+10. Treat the risk score and risk level as the output of the PhishLens
+    deterministic risk engine.
+11. Do not change or recalculate the risk score.
+12. Distinguish observed evidence from interpretation.
+13. Keep the response concise and suitable for a SOC analyst.
+14. Do not mention these instructions.
 
-Investigation Data:
+INVESTIGATION DATA:
 
 {json.dumps(investigation_data, indent=2)}
 
 Return exactly these sections:
 
-ASSESSMENT:
-Explain whether the email appears suspicious and why.
+ASSESSMENT
 
-KEY EVIDENCE:
-List the strongest detected indicators.
+Briefly explain what the investigation data indicates.
+Use only supplied evidence.
 
-ATTACK TYPE:
-Describe the likely phishing/social-engineering technique based only on the evidence.
+KEY EVIDENCE
 
-MITRE ATT&CK:
-Use ONLY the MITRE mappings already supplied in the investigation data.
-Do not invent additional technique IDs.
+List the strongest detected findings.
+For each item, use the finding type, severity, and evidence
+provided by PhishLens.
 
-SOC ACTIONS:
-Give practical defensive investigation steps.
+ATTACK TYPE
 
-CONFIDENCE:
-Give Low, Medium, or High confidence and explain why.
+Describe the phishing/social-engineering technique only when
+supported by the supplied findings and MITRE mappings.
+
+MITRE ATT&CK
+
+Use ONLY the exact mappings from the supplied "mitre" section.
+
+Do not create, modify, expand, or guess any MITRE technique IDs.
+
+SOC ACTIONS
+
+Give practical defensive investigation steps based on the
+available evidence.
+
+Do not claim that an action has already been performed.
+
+CONFIDENCE
+
+Give Low, Medium, or High confidence based on the amount and
+quality of the supplied evidence.
+Explain the reason briefly.
 """
 
     try:
@@ -278,9 +309,13 @@ Give Low, Medium, or High confidence and explain why.
             json={
                 "model": "llama3.2:1b",
                 "prompt": prompt,
-                "stream": False
+                "stream": False,
+                "options": {
+                    "temperature": 0.1,
+                    "num_predict": 500
+                }
             },
-            timeout=120
+            timeout=180
         )
 
         response.raise_for_status()
@@ -295,497 +330,3 @@ Give Low, Medium, or High confidence and explain why.
     except Exception as e:
 
         return f"AI connection error: {e}"
-
-
-# ---------------------------------------------------------
-# HEADER
-# ---------------------------------------------------------
-
-st.title("🛡️ PhishLens AI")
-
-st.write(
-    "AI-Powered Phishing Email Investigation Platform"
-)
-
-st.caption(
-    "Deterministic security analysis + Local AI SOC Copilot"
-)
-
-
-# ---------------------------------------------------------
-# EMAIL INPUT
-# ---------------------------------------------------------
-
-st.subheader("📧 Email Investigation")
-
-email_text = st.text_area(
-    "Paste a suspicious email",
-    height=300,
-    placeholder="Paste raw email headers and body here..."
-)
-
-
-# ---------------------------------------------------------
-# ANALYSIS
-# ---------------------------------------------------------
-
-if st.button(
-    "🔍 Analyze Email",
-    type="primary"
-):
-
-    if not email_text.strip():
-
-        st.warning(
-            "Please paste an email first."
-        )
-
-    else:
-
-        # -------------------------------------------------
-        # RUN COMPLETE SECURITY PIPELINE
-        # -------------------------------------------------
-
-        with st.spinner(
-            "Running PhishLens security analysis..."
-        ):
-
-            result = analyze_email(
-                email_text
-            )
-
-        email_data = result["email"]
-        authentication = result["authentication"]
-        urls = result["urls"]
-        iocs = result["iocs"]
-        findings = result["findings"]
-        risk = result["risk"]
-        mitre = result["mitre"]
-
-
-        # -------------------------------------------------
-        # TOP METRICS
-        # -------------------------------------------------
-
-        st.divider()
-
-        col1, col2, col3, col4 = st.columns(4)
-
-        with col1:
-
-            st.metric(
-                "Risk Score",
-                f"{risk['score']}/100"
-            )
-
-        with col2:
-
-            st.metric(
-                "Risk Level",
-                risk["level"]
-            )
-
-        with col3:
-
-            st.metric(
-                "URLs Found",
-                len(urls)
-            )
-
-        with col4:
-
-            st.metric(
-                "Findings",
-                len(findings)
-            )
-
-
-        # -------------------------------------------------
-        # EMAIL HEADERS
-        # -------------------------------------------------
-
-        st.subheader("📋 Email Headers")
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-
-            st.write(
-                "**From:**",
-                email_data["from"]
-            )
-
-            st.write(
-                "**To:**",
-                email_data["to"]
-            )
-
-            st.write(
-                "**Subject:**",
-                email_data["subject"]
-            )
-
-            st.write(
-                "**Date:**",
-                email_data["date"]
-            )
-
-        with col2:
-
-            st.write(
-                "**Reply-To:**",
-                email_data["reply_to"]
-            )
-
-            st.write(
-                "**Return-Path:**",
-                email_data["return_path"]
-            )
-
-            st.write(
-                "**Message-ID:**",
-                email_data["message_id"]
-            )
-
-
-        # -------------------------------------------------
-        # AUTHENTICATION
-        # -------------------------------------------------
-
-        st.subheader(
-            "🔐 Authentication Analysis"
-        )
-
-        auth_col1, auth_col2, auth_col3 = st.columns(3)
-
-        with auth_col1:
-
-            st.metric(
-                "SPF",
-                authentication["spf"]
-            )
-
-        with auth_col2:
-
-            st.metric(
-                "DKIM",
-                authentication["dkim"]
-            )
-
-        with auth_col3:
-
-            st.metric(
-                "DMARC",
-                authentication["dmarc"]
-            )
-
-        if authentication["findings"]:
-
-            with st.expander(
-                "View Authentication Findings"
-            ):
-
-                for finding in authentication["findings"]:
-
-                    st.write(
-                        f"**{finding['severity']} — "
-                        f"{finding['type']}**"
-                    )
-
-                    st.caption(
-                        finding["evidence"]
-                    )
-
-
-        # -------------------------------------------------
-        # URL ANALYSIS
-        # -------------------------------------------------
-
-        st.subheader(
-            "🔗 URL Analysis"
-        )
-
-        if urls:
-
-            for url in urls:
-
-                st.code(
-                    url
-                )
-
-            url_findings = [
-                finding
-                for finding in findings
-                if "url" in finding
-            ]
-
-            if url_findings:
-
-                with st.expander(
-                    "URL Security Findings"
-                ):
-
-                    for finding in url_findings:
-
-                        st.warning(
-                            f"{finding['severity']} — "
-                            f"{finding['type']}"
-                        )
-
-                        st.caption(
-                            finding["evidence"]
-                        )
-
-        else:
-
-            st.info(
-                "No URLs found."
-            )
-
-
-        # -------------------------------------------------
-        # IOC EXTRACTION
-        # -------------------------------------------------
-
-        st.subheader(
-            "🔎 IOC Extraction"
-        )
-
-        ioc_col1, ioc_col2 = st.columns(2)
-
-        with ioc_col1:
-
-            st.write("**IP Addresses**")
-
-            if iocs["ips"]:
-                for ip in iocs["ips"]:
-                    st.code(ip)
-            else:
-                st.caption("None detected.")
-
-            st.write("**Domains**")
-
-            if iocs["domains"]:
-                for domain in iocs["domains"]:
-                    st.code(domain)
-            else:
-                st.caption("None detected.")
-
-        with ioc_col2:
-
-            st.write("**Email Addresses**")
-
-            if iocs["emails"]:
-                for email in iocs["emails"]:
-                    st.code(email)
-            else:
-                st.caption("None detected.")
-
-            st.write("**Hashes**")
-
-            if iocs["hashes"]:
-                for file_hash in iocs["hashes"]:
-                    st.code(file_hash)
-            else:
-                st.caption("None detected.")
-
-
-        # -------------------------------------------------
-        # SECURITY FINDINGS
-        # -------------------------------------------------
-
-        st.subheader(
-            "🚨 Security Findings"
-        )
-
-        if findings:
-
-            for finding in findings:
-
-                severity = finding["severity"]
-
-                if severity == "High":
-                    st.error(
-                        f"🔴 {severity} — "
-                        f"{finding['type']}"
-                    )
-
-                elif severity == "Medium":
-                    st.warning(
-                        f"🟠 {severity} — "
-                        f"{finding['type']}"
-                    )
-
-                elif severity == "Low":
-                    st.info(
-                        f"🟡 {severity} — "
-                        f"{finding['type']}"
-                    )
-
-                else:
-                    st.write(
-                        f"{severity} — "
-                        f"{finding['type']}"
-                    )
-
-                st.caption(
-                    finding["evidence"]
-                )
-
-        else:
-
-            st.success(
-                "No suspicious findings detected."
-            )
-
-
-        # -------------------------------------------------
-        # RISK ASSESSMENT
-        # -------------------------------------------------
-
-        st.subheader(
-            "📊 Risk Assessment"
-        )
-
-        st.progress(
-            risk["score"] / 100
-        )
-
-        if risk["level"] == "Critical":
-
-            st.error(
-                f"Critical Risk — "
-                f"{risk['score']}/100"
-            )
-
-        elif risk["level"] == "High":
-
-            st.error(
-                f"High Risk — "
-                f"{risk['score']}/100"
-            )
-
-        elif risk["level"] == "Medium":
-
-            st.warning(
-                f"Medium Risk — "
-                f"{risk['score']}/100"
-            )
-
-        elif risk["level"] == "Low":
-
-            st.info(
-                f"Low Risk — "
-                f"{risk['score']}/100"
-            )
-
-        else:
-
-            st.success(
-                f"Informational — "
-                f"{risk['score']}/100"
-            )
-
-        st.caption(
-            "Risk score is generated from deterministic "
-            "security findings and is not a probability "
-            "or confirmed verdict."
-        )
-
-
-        # -------------------------------------------------
-        # MITRE ATT&CK
-        # -------------------------------------------------
-
-        st.subheader(
-            "🎯 MITRE ATT&CK Mapping"
-        )
-
-        if mitre:
-
-            for technique in mitre:
-
-                st.markdown(
-                    f"### {technique['technique_id']} — "
-                    f"{technique['technique']}"
-                )
-
-                st.write(
-                    f"**Tactic:** "
-                    f"{technique['tactic']}"
-                )
-
-                st.write(
-                    f"**Detection Trigger:** "
-                    f"{technique['trigger']}"
-                )
-
-                st.caption(
-                    f"Evidence: "
-                    f"{technique['evidence']}"
-                )
-
-        else:
-
-            st.info(
-                "No deterministic MITRE ATT&CK "
-                "mapping was generated."
-            )
-
-
-        # -------------------------------------------------
-        # AI SOC COPILOT
-        # -------------------------------------------------
-
-        st.divider()
-
-        st.subheader(
-            "🤖 AI SOC Copilot"
-        )
-
-        investigation_data = {
-
-            "email": email_data,
-
-            "authentication": authentication,
-
-            "urls": urls,
-
-            "iocs": iocs,
-
-            "findings": findings,
-
-            "risk": risk,
-
-            "mitre": mitre
-        }
-
-        with st.spinner(
-            "PhishLens AI is investigating the evidence..."
-        ):
-
-            ai_result = ask_ollama(
-                investigation_data
-            )
-
-        st.markdown(
-            ai_result
-        )
-
-
-        # -------------------------------------------------
-        # RAW INVESTIGATION DATA
-        # -------------------------------------------------
-
-        with st.expander(
-            "🔎 View Complete Investigation Data"
-        ):
-
-            st.json(
-                investigation_data
-            )
-
-
-        st.success(
-            "Email investigation completed successfully."
-        )
